@@ -4,11 +4,10 @@ use anyhow::{bail, Context as AnyhowContext};
 use mime::Mime;
 use reqwest::header::CONTENT_TYPE;
 use s3::{creds::Credentials, Bucket, Region};
-use serenity::all::Context;
 
-use crate::structs::{Config, HttpClient, S3Bucket};
+use crate::structs::{Config, Data};
 
-pub async fn connect_bucket(config: &Config) -> Result<S3Bucket, anyhow::Error> {
+pub async fn connect_bucket(config: &Config) -> Result<Bucket, anyhow::Error> {
     let region = Region::Custom {
         region: "us-east-1".to_owned(),
         endpoint: config.storage.url.to_owned(),
@@ -29,19 +28,11 @@ pub async fn connect_bucket(config: &Config) -> Result<S3Bucket, anyhow::Error> 
     )?
     .with_path_style();
 
-    Ok(S3Bucket { bucket })
+    Ok(bucket)
 }
 
-pub async fn upload_image_to_s3bucket(
-    ctx: &Context,
-    image_url: String,
-    uid: String,
-) -> Result<String, anyhow::Error> {
-    let data = ctx.data.read().await;
-    let http_client = &data
-        .get::<HttpClient>()
-        .context("Could not get http client")?
-        .client;
+pub async fn upload(data: &Data, image_url: String, uid: String) -> Result<String, anyhow::Error> {
+    let http_client = &data.http_client;
 
     let response = http_client.get(image_url.clone()).send().await?;
     let content_type_header = response
@@ -54,11 +45,8 @@ pub async fn upload_image_to_s3bucket(
 
     let image_bytes = response.bytes().await?;
 
-    let config = data.get::<Config>().context("Could not get config")?;
-    let bucket = &data
-        .get::<S3Bucket>()
-        .context("Could not get bucket")?
-        .bucket;
+    let config = &data.config;
+    let bucket = &data.bucket;
 
     if !config.settings.image_types.contains(&extension) {
         bail!("Invalid content-type")
@@ -80,20 +68,13 @@ pub async fn upload_image_to_s3bucket(
     ))
 }
 
-pub async fn delete_image_from_s3_bucket(ctx: &Context, uid: String) -> Result<(), anyhow::Error> {
-    let data = ctx.data.read().await;
-
-    let config = data.get::<Config>().context("Could not get config")?;
-    let bucket = &data
-        .get::<S3Bucket>()
-        .context("Could not get bucket")?
-        .bucket;
+pub async fn delete(data: &Data, uid: String) -> Result<(), anyhow::Error> {
+    let config = &data.config;
+    let bucket = &data.bucket;
 
     let path = format!("{}{}", config.storage.storage_path, uid);
 
-    let response = bucket
-        .delete_object(path.clone())
-        .await?;
+    let response = bucket.delete_object(path.clone()).await?;
 
     if response.status_code() != 204 {
         bail!("Error deleting image from minio")
