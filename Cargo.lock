@@ -364,7 +364,7 @@ checksum = "7c12d1856e42f0d817a835fe55853957c85c8c8a470114029143d3f12671446e"
 
 [[package]]
 name = "blackcube-rs"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bson",

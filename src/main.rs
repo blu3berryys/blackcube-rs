@@ -4,9 +4,10 @@ mod responses;
 mod s3bucket;
 mod structs;
 
+use auth::HasAuth;
 use handlers::components::handle_component_interaction;
 use image::ImageFormat;
-use poise::serenity_prelude::{self as serenity, Interaction};
+use poise::serenity_prelude::{self as serenity, CacheHttp, Interaction};
 use reqwest::Client;
 use responses::{edit_request, send_ephemeral_interaction_followup_reply};
 use s3bucket::connect_bucket;
@@ -166,6 +167,11 @@ async fn event_handler(
             }
             _ => {}
         },
+        serenity::FullEvent::Message { new_message } => {
+            if new_message.channel_id == data.config.server.request_channel_id && !new_message.author.has_auth(ctx, data).await? {
+                new_message.delete(ctx.http()).await?;
+            }
+        }
         _ => {}
     }
     Ok(())
