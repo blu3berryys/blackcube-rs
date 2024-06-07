@@ -1,17 +1,14 @@
-use anyhow::bail;
-use anyhow::Context as AnyhowContext;
-
+use anyhow::{bail, Context as AnyhowContext};
 use poise::serenity_prelude as serenity;
-
 use serenity::{
     builder::CreateInteractionResponse, client::Context, model::application::ComponentInteraction,
 };
 
-use crate::structs::Data;
 use crate::{
     auth::HasAuth,
     responses::{edit_request, send_ephemeral_interaction_reply},
     s3bucket::upload,
+    structs::Data,
 };
 
 pub async fn handle_component_interaction(
@@ -32,8 +29,6 @@ pub async fn handle_component_interaction(
         .first()
         .context("Could not get first embed")?
         .clone();
-
-    let embed_link = embed.url.clone();
 
     let image_url = embed
         .thumbnail
@@ -68,7 +63,6 @@ pub async fn handle_component_interaction(
                     &mut component_interaction.message,
                     "Uploading...",
                     Some(&image_url),
-                    embed_link.as_deref(),
                     false,
                 )
                 .await
@@ -83,15 +77,10 @@ pub async fn handle_component_interaction(
                     &mut component_interaction.message,
                     "Request Approved",
                     Some(&s3bucket_url),
-                    None,
                     false,
                 )
                 .await
                 .context("could not edit request message")?;
-
-                // delete_user_request(&ctx, &embed)
-                //     .await
-                //     .context("Could not delete original request")?;
             } else {
                 send_ephemeral_interaction_reply(
                     ctx,
@@ -114,14 +103,10 @@ pub async fn handle_component_interaction(
                     &mut component_interaction.message,
                     "Request Denied",
                     None,
-                    None,
                     false,
                 )
                 .await
                 .context("Could not edit request message")?;
-                // delete_user_request(&ctx, &embed)
-                //     .await
-                //     .context("Could not delete original request")?;
             } else {
                 send_ephemeral_interaction_reply(
                     ctx,
@@ -144,15 +129,10 @@ pub async fn handle_component_interaction(
                     &mut component_interaction.message,
                     "Request Cancelled",
                     None,
-                    None,
                     false,
                 )
                 .await
                 .context("Could not edit request message")?;
-
-                // delete_user_request(&ctx, &embed)
-                //     .await
-                //     .context("Could not delete original request")?;
             } else {
                 send_ephemeral_interaction_reply(
                     ctx,
@@ -160,7 +140,7 @@ pub async fn handle_component_interaction(
                     "You cannot cancel someone else's background request",
                 )
                 .await
-                .context("Could not tell user they cannot cancel someone else's background")?;
+                .context("Could not tell user they cannot cancel someone else's background request")?;
             }
         }
         &_ => {

@@ -17,7 +17,6 @@ pub async fn edit_request(
     msg: &mut Message,
     message: &str,
     thumbnail: Option<&str>,
-    link: Option<&str>,
     keep_components: bool,
 ) -> anyhow::Result<()> {
     let embed = &msg.embeds[0];
@@ -48,13 +47,6 @@ pub async fn edit_request(
     match thumbnail {
         Some(thumbnail) => {
             embed_builder = embed_builder.thumbnail(thumbnail);
-        }
-        None => {}
-    }
-
-    match link {
-        Some(link) => {
-            embed_builder = embed_builder.url(link);
         }
         None => {}
     }

@@ -1,9 +1,8 @@
-// use std::collections::HashMap;
-
+use image::ImageFormat;
 use poise::serenity_prelude::{ChannelId, GuildId, RoleId};
+pub use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use s3::Bucket;
-pub use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -44,6 +43,12 @@ pub struct Server {
 
 pub struct Data {
     pub config: Config,
+    pub content_types: ContentTypes,
     pub http_client: Client,
     pub bucket: Bucket,
+}
+
+pub struct ContentTypes {
+    pub valid_content_types: Vec<ImageFormat>,
+    pub concatenated_content_types: String
 }
