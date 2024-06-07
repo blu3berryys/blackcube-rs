@@ -1,8 +1,8 @@
 use image::ImageFormat;
 use poise::serenity_prelude::{ChannelId, GuildId, RoleId};
-pub use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use s3::Bucket;
+pub use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -50,5 +50,5 @@ pub struct Data {
 
 pub struct ContentTypes {
     pub valid_content_types: Vec<ImageFormat>,
-    pub concatenated_content_types: String
+    pub concatenated_content_types: String,
 }

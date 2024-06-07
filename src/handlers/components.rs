@@ -140,7 +140,9 @@ pub async fn handle_component_interaction(
                     "You cannot cancel someone else's background request",
                 )
                 .await
-                .context("Could not tell user they cannot cancel someone else's background request")?;
+                .context(
+                    "Could not tell user they cannot cancel someone else's background request",
+                )?;
             }
         }
         &_ => {

@@ -1,5 +1,6 @@
 use std::{
-    io::Cursor, time::{SystemTime, UNIX_EPOCH}
+    io::Cursor,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{bail, Context as AnyhowContext};
@@ -38,8 +39,11 @@ pub async fn upload(data: &Data, image_url: String, uid: String) -> Result<Strin
     let response = http_client.get(image_url.clone()).send().await?;
     let image_bytes = response.bytes().await?;
 
-    let content_type = Reader::new(Cursor::new(&image_bytes)).with_guessed_format()?.format().context("Could not parse image format")?.to_mime_type();
-
+    let content_type = Reader::new(Cursor::new(&image_bytes))
+        .with_guessed_format()?
+        .format()
+        .context("Could not parse image format")?
+        .to_mime_type();
 
     let config = &data.config;
     let bucket = &data.bucket;
@@ -54,7 +58,10 @@ pub async fn upload(data: &Data, image_url: String, uid: String) -> Result<Strin
         bail!("Error uploading image to minio")
     }
 
-    let extension = content_type.split("/").last().context("Could not parse extension from content type")?;
+    let extension = content_type
+        .split("/")
+        .last()
+        .context("Could not parse extension from content type")?;
 
     Ok(format!(
         "{}/{}{}{}?{}.{}",

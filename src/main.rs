@@ -12,7 +12,7 @@ use responses::{edit_request, send_ephemeral_interaction_followup_reply};
 use s3bucket::connect_bucket;
 use serenity::GatewayIntents;
 use std::fs;
-use structs::{Config, Data, ContentTypes};
+use structs::{Config, ContentTypes, Data};
 
 type Context<'a> = poise::Context<'a, Data, anyhow::Error>;
 
@@ -48,7 +48,11 @@ async fn main() {
         })
         .collect();
 
-    let image_types= config.settings.image_types.split_last().expect("Could not split image types vector");
+    let image_types = config
+        .settings
+        .image_types
+        .split_last()
+        .expect("Could not split image types vector");
     let concatenated_content_types = format!("{}, or {}", image_types.1.join(", "), image_types.0);
 
     let token = config.bot.discord_token.clone();
@@ -81,7 +85,7 @@ async fn main() {
                     config,
                     content_types: ContentTypes {
                         valid_content_types,
-                        concatenated_content_types
+                        concatenated_content_types,
                     },
                     http_client,
                     bucket,
