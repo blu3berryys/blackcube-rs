@@ -1,14 +1,15 @@
-use std::str::FromStr;
+use std::{
+    io::Cursor,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{bail, Context as AnyhowContext};
-use mime::Mime;
-use reqwest::header::CONTENT_TYPE;
+use image::io::Reader;
 use s3::{creds::Credentials, Bucket, Region};
-use serenity::all::Context;
 
-use crate::structs::{Config, HttpClient, S3Bucket};
+use crate::structs::{Config, Data};
 
-pub async fn connect_bucket(config: &Config) -> Result<S3Bucket, anyhow::Error> {
+pub async fn connect_bucket(config: &Config) -> Result<Bucket, anyhow::Error> {
     let region = Region::Custom {
         region: "us-east-1".to_owned(),
         endpoint: config.storage.url.to_owned(),
@@ -29,71 +30,57 @@ pub async fn connect_bucket(config: &Config) -> Result<S3Bucket, anyhow::Error> 
     )?
     .with_path_style();
 
-    Ok(S3Bucket { bucket })
+    Ok(bucket)
 }
 
-pub async fn upload_image_to_s3bucket(
-    ctx: &Context,
-    image_url: String,
-    uid: String,
-) -> Result<String, anyhow::Error> {
-    let data = ctx.data.read().await;
-    let http_client = &data
-        .get::<HttpClient>()
-        .context("Could not get http client")?
-        .client;
+pub async fn upload(data: &Data, image_url: String, uid: String) -> Result<String, anyhow::Error> {
+    let http_client = &data.http_client;
 
     let response = http_client.get(image_url.clone()).send().await?;
-    let content_type_header = response
-        .headers()
-        .get(CONTENT_TYPE)
-        .context("Could not parse content type of image")?
-        .clone();
-    let parsed_content_type = Mime::from_str(content_type_header.to_str()?)?;
-    let extension = parsed_content_type.subtype().to_string();
-
     let image_bytes = response.bytes().await?;
 
-    let config = data.get::<Config>().context("Could not get config")?;
-    let bucket = &data
-        .get::<S3Bucket>()
-        .context("Could not get bucket")?
-        .bucket;
+    let content_type = Reader::new(Cursor::new(&image_bytes))
+        .with_guessed_format()?
+        .format()
+        .context("Could not parse image format")?
+        .to_mime_type();
 
-    if !config.settings.image_types.contains(&extension) {
-        bail!("Invalid content-type")
-    }
+    let config = &data.config;
+    let bucket = &data.bucket;
 
     let path = format!("{}{}", config.storage.storage_path, uid);
 
     let response = bucket
-        .put_object_with_content_type(path.clone(), &image_bytes, &parsed_content_type.to_string())
+        .put_object_with_content_type(path.clone(), &image_bytes, content_type)
         .await?;
 
     if response.status_code() != 200 {
         bail!("Error uploading image to minio")
     }
 
+    let extension = content_type
+        .split("/")
+        .last()
+        .context("Could not parse extension from content type")?;
+
     Ok(format!(
-        "{}/{}{}{}",
-        config.storage.url, config.storage.bucket_name, config.storage.storage_path, uid
+        "{}/{}{}{}?{}.{}",
+        config.storage.url,
+        config.storage.bucket_name,
+        config.storage.storage_path,
+        uid,
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
+        extension
     ))
 }
 
-pub async fn delete_image_from_s3_bucket(ctx: &Context, uid: String) -> Result<(), anyhow::Error> {
-    let data = ctx.data.read().await;
-
-    let config = data.get::<Config>().context("Could not get config")?;
-    let bucket = &data
-        .get::<S3Bucket>()
-        .context("Could not get bucket")?
-        .bucket;
+pub async fn delete(data: &Data, uid: String) -> Result<(), anyhow::Error> {
+    let config = &data.config;
+    let bucket = &data.bucket;
 
     let path = format!("{}{}", config.storage.storage_path, uid);
 
-    let response = bucket
-        .delete_object(path.clone())
-        .await?;
+    let response = bucket.delete_object(path.clone()).await?;
 
     if response.status_code() != 204 {
         bail!("Error deleting image from minio")

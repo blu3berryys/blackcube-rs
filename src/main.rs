@@ -1,187 +1,20 @@
 mod auth;
-mod database;
 mod handlers;
-mod imgur;
 mod responses;
 mod s3bucket;
 mod structs;
 
-use anyhow::Context as AnyhowContext;
-use database::connect_database;
-use handlers::{
-    commands::handle_commands, components::handle_component_interaction,
-    requests::handle_user_request,
-};
-use responses::edit_request;
-use s3bucket::connect_bucket;
-use structs::{Collections, Config, PendingRequestMidStore, PendingRequestUidStore, S3Bucket};
-
-use std::{collections::HashMap, fs};
-
+use handlers::components::handle_component_interaction;
+use image::ImageFormat;
+use poise::serenity_prelude::{self as serenity, Interaction};
 use reqwest::Client;
-use serenity::{
-    all::{MessageId, UserId},
-    async_trait,
-    client::{Context, EventHandler},
-    model::{
-        application::Interaction,
-        channel::Message,
-        prelude::{ChannelId, GuildId, Ready},
-    },
-    prelude::GatewayIntents,
-};
+use responses::{edit_request, send_ephemeral_interaction_followup_reply};
+use s3bucket::connect_bucket;
+use serenity::GatewayIntents;
+use std::fs;
+use structs::{Config, ContentTypes, Data};
 
-use crate::{responses::send_ephemeral_interaction_followup_reply, structs::HttpClient};
-
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
-        let data = ctx.data.read().await;
-        let config = data
-            .get::<Config>()
-            .expect("Could not get config from data");
-
-        if msg.channel_id == config.server.request_channel_id {
-            drop(data);
-            tokio::spawn(handle_user_request(ctx, msg));
-        } else if msg.channel_id == config.server.command_channel_id {
-            drop(data);
-            tokio::spawn(handle_commands(ctx, msg));
-        }
-    }
-
-    async fn message_delete(
-        &self,
-        ctx: Context,
-        _channel_id: ChannelId,
-        deleted_message_id: MessageId,
-        _guild_id: Option<GuildId>,
-    ) {
-        tokio::spawn(async move {
-            let mut data = ctx.data.write().await;
-
-            let pending_request_mid_store = data
-                .get_mut::<PendingRequestMidStore>()
-                .context("Could not get pending request store")
-                .expect("Could not get pending request mid store");
-
-            let message_id = pending_request_mid_store.remove(&deleted_message_id);
-
-            let config = data
-                .get::<Config>()
-                .expect("Could not get config from data");
-
-            match message_id {
-                Some(message_id) => {
-                    let existing_request = config
-                        .server
-                        .log_channel_id
-                        .message(&ctx.http, message_id)
-                        .await;
-
-                    match existing_request {
-                        Ok(mut existing_request) => {
-                            let result = edit_request(
-                                &ctx,
-                                &mut existing_request,
-                                "Request Cancelled",
-                                None,
-                                None,
-                                false,
-                            )
-                            .await
-                            .context("Could not edit request message");
-                            if result.is_err() {
-                                println!("{:?}", result);
-                            }
-                        }
-                        Err(_) => {}
-                    }
-                }
-                None => {}
-            }
-        });
-    }
-
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        match interaction {
-            Interaction::Component(mut component_interaction) => {
-                tokio::spawn(async move {
-                    let result =
-                        handle_component_interaction(ctx.clone(), component_interaction.clone())
-                            .await;
-                    if result.is_err() {
-                        println!("{:?}", result);
-
-                        let embed = component_interaction.message.embeds.first();
-
-                        match embed {
-                            Some(embed) => {
-                                let embed = embed.clone();
-
-                                let thumbnail;
-
-                                match &embed.thumbnail {
-                                    Some(embed_thumbnail) => {
-                                        thumbnail = Some(embed_thumbnail.url.as_str());
-                                    }
-                                    None => {
-                                        thumbnail = None;
-                                    }
-                                }
-
-                                let url;
-
-                                match &embed.url {
-                                    Some(embed_url) => {
-                                        url = Some(embed_url.as_str());
-                                    }
-                                    None => {
-                                        url = None;
-                                    }
-                                }
-
-                                let result = edit_request(
-                                    &ctx,
-                                    &mut component_interaction.message,
-                                    "Request Pending",
-                                    thumbnail,
-                                    url,
-                                    true,
-                                )
-                                .await;
-                                if result.is_err() {
-                                    println!("{:?}", result);
-                                }
-                            }
-                            None => {}
-                        }
-
-                        let result = send_ephemeral_interaction_followup_reply(
-                            &ctx,
-                            component_interaction,
-                            "Failed to accept request",
-                        )
-                        .await;
-                        match result {
-                            Ok(()) => {}
-                            Err(err) => {
-                                println!("{}", err);
-                            }
-                        }
-                    }
-                });
-            }
-            _ => {}
-        }
-    }
-
-    async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
-    }
-}
+type Context<'a> = poise::Context<'a, Data, anyhow::Error>;
 
 #[tokio::main]
 async fn main() {
@@ -204,36 +37,136 @@ async fn main() {
             .expect("Could not read configuration file, make sure the config is located at /etc/blackcube-rs/blackcube-rs.toml or C:\\ProgramData\\blackcube-rs\\blackcube-rs.toml")
     ).expect("could not read config");
 
+    // Should I be doing all of this just to allow for changes to the valid image types from the config?? The jury is still out.
+    let valid_content_types = config
+        .settings
+        .image_types
+        .iter()
+        .map(|image_type_string| {
+            ImageFormat::from_extension(image_type_string)
+                .expect("Could not parse valid image types from config")
+        })
+        .collect();
+
+    let image_types = config
+        .settings
+        .image_types
+        .split_last()
+        .expect("Could not split image types vector");
+    let concatenated_content_types = format!("{}, or {}", image_types.1.join(", "), image_types.0);
+
+    let token = config.bot.discord_token.clone();
+
     let bucket = connect_bucket(&config)
         .await
         .expect("Could not initialize storage bucket connection");
 
-    let collections: Collections =
-        connect_database(&config).expect("Could not connect to database");
-
     let http_client: Client = Client::new();
 
-    let pending_request_uid_store: HashMap<UserId, MessageId> = HashMap::new();
-    let pending_request_mid_store: HashMap<MessageId, MessageId> = HashMap::new();
+    let options = poise::FrameworkOptions {
+        commands: vec![handlers::commands::bg(), handlers::commands::rm()],
+        event_handler: |ctx, event, framework, data| {
+            Box::pin(event_handler(ctx, event, framework, data))
+        },
+        ..Default::default()
+    };
+
+    let framework = poise::Framework::builder()
+        .setup(move |ctx, ready, framework| {
+            Box::pin(async move {
+                println!("{} connected!", ready.user.name);
+                poise::builtins::register_in_guild(
+                    ctx,
+                    &framework.options().commands,
+                    config.server.guild_id.into(),
+                )
+                .await?;
+                Ok(Data {
+                    config,
+                    content_types: ContentTypes {
+                        valid_content_types,
+                        concatenated_content_types,
+                    },
+                    http_client,
+                    bucket,
+                })
+            })
+        })
+        .options(options)
+        .build();
 
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = serenity::Client::builder(&config.bot.discord_token, intents)
-        .application_id(config.bot.application_id.into())
-        .event_handler(Handler)
-        .await
-        .expect("Error creating client");
 
-    let mut data = client.data.write().await;
-    data.insert::<Config>(config);
-    data.insert::<S3Bucket>(bucket);
-    data.insert::<Collections>(collections);
-    data.insert::<HttpClient>(HttpClient {
-        client: http_client,
-    });
-    data.insert::<PendingRequestUidStore>(pending_request_uid_store);
-    data.insert::<PendingRequestMidStore>(pending_request_mid_store);
+    let client = serenity::ClientBuilder::new(token, intents)
+        .framework(framework)
+        .await;
 
-    drop(data);
+    client.unwrap().start().await.unwrap();
+}
 
-    client.start().await.expect("Error starting client");
+async fn event_handler(
+    ctx: &serenity::Context,
+    event: &serenity::FullEvent,
+    _framework: poise::FrameworkContext<'_, Data, anyhow::Error>,
+    data: &Data,
+) -> anyhow::Result<()> {
+    match event {
+        serenity::FullEvent::InteractionCreate { interaction } => match interaction {
+            Interaction::Component(component_interaction) => {
+                let result =
+                    handle_component_interaction(ctx, data, component_interaction.clone()).await;
+                if result.is_err() {
+                    println!("{:?}", result);
+
+                    let embed = component_interaction.message.embeds.first();
+
+                    match embed {
+                        Some(embed) => {
+                            let embed = embed.clone();
+
+                            let thumbnail;
+
+                            match &embed.thumbnail {
+                                Some(embed_thumbnail) => {
+                                    thumbnail = Some(embed_thumbnail.url.as_str());
+                                }
+                                None => {
+                                    thumbnail = None;
+                                }
+                            }
+
+                            let result = edit_request(
+                                &ctx,
+                                &mut component_interaction.clone().message,
+                                "Request Pending",
+                                thumbnail,
+                                true,
+                            )
+                            .await;
+                            if result.is_err() {
+                                println!("{:?}", result);
+                            }
+                        }
+                        None => {}
+                    }
+
+                    let result = send_ephemeral_interaction_followup_reply(
+                        &ctx,
+                        component_interaction.clone(),
+                        "Failed to accept request",
+                    )
+                    .await;
+                    match result {
+                        Ok(()) => {}
+                        Err(err) => {
+                            println!("{}", err);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+    Ok(())
 }

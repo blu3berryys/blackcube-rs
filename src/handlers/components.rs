@@ -1,29 +1,26 @@
-use anyhow::bail;
-use anyhow::Context as AnyhowContext;
-
+use anyhow::{bail, Context as AnyhowContext};
+use poise::serenity_prelude as serenity;
 use serenity::{
     builder::CreateInteractionResponse, client::Context, model::application::ComponentInteraction,
 };
 
-use crate::responses::delete_user_request;
-use crate::structs::Collections;
 use crate::{
     auth::HasAuth,
-    database,
     responses::{edit_request, send_ephemeral_interaction_reply},
-    s3bucket::upload_image_to_s3bucket,
-    structs::Usrbg,
+    s3bucket::upload,
+    structs::Data,
 };
 
 pub async fn handle_component_interaction(
-    ctx: Context,
+    ctx: &Context,
+    data: &Data,
     mut component_interaction: ComponentInteraction,
 ) -> anyhow::Result<()> {
     let has_auth = component_interaction
         .member
         .as_ref()
         .context("Could not retrieve user from interaction")?
-        .has_auth(&ctx)
+        .has_auth(ctx, data)
         .await?;
 
     let embed = component_interaction
@@ -32,8 +29,6 @@ pub async fn handle_component_interaction(
         .first()
         .context("Could not get first embed")?
         .clone();
-
-    let embed_link = embed.url.clone();
 
     let image_url = embed
         .thumbnail
@@ -64,52 +59,31 @@ pub async fn handle_component_interaction(
                     .context("Could not acknowledge component interaction")?;
 
                 edit_request(
-                    &ctx,
+                    ctx,
                     &mut component_interaction.message,
                     "Uploading...",
                     Some(&image_url),
-                    embed_link.as_deref(),
                     false,
                 )
                 .await
                 .context("Could not update message to show loading state")?;
 
-                let s3bucket_url = upload_image_to_s3bucket(&ctx, image_url.clone(), uid.clone())
+                let s3bucket_url = upload(data, image_url.clone(), uid.clone())
                     .await
                     .context("Could not upload image to s3bucket")?;
 
-                let entry = Usrbg {
-                    uid: uid.clone(),
-                    img: s3bucket_url.clone(),
-                };
-
-                let data = ctx.data.read().await;
-                let collections = data
-                    .get::<Collections>()
-                    .context("Could not get collections")?;
-
-                database::upsert(&collections.usrbg, &uid, entry)
-                    .context("Could not upsert into database")?;
-
                 edit_request(
-                    &ctx,
+                    ctx,
                     &mut component_interaction.message,
                     "Request Approved",
                     Some(&s3bucket_url),
-                    None,
                     false,
                 )
                 .await
                 .context("could not edit request message")?;
-
-                drop(data);
-
-                delete_user_request(&ctx, &embed)
-                    .await
-                    .context("Could not delete original request")?;
             } else {
                 send_ephemeral_interaction_reply(
-                    &ctx,
+                    ctx,
                     component_interaction.clone(),
                     "You must wait for a moderator to approve/deny this background",
                 )
@@ -125,21 +99,17 @@ pub async fn handle_component_interaction(
                     .context("Could not acknowledge component interaction")?;
 
                 edit_request(
-                    &ctx,
+                    ctx,
                     &mut component_interaction.message,
                     "Request Denied",
-                    None,
                     None,
                     false,
                 )
                 .await
                 .context("Could not edit request message")?;
-                delete_user_request(&ctx, &embed)
-                    .await
-                    .context("Could not delete original request")?;
             } else {
                 send_ephemeral_interaction_reply(
-                    &ctx,
+                    ctx,
                     component_interaction.clone(),
                     "You must wait for a moderator to approve/deny this background",
                 )
@@ -155,27 +125,24 @@ pub async fn handle_component_interaction(
                     .context("Could not acknowledge component interaction")?;
 
                 edit_request(
-                    &ctx,
+                    ctx,
                     &mut component_interaction.message,
                     "Request Cancelled",
-                    None,
                     None,
                     false,
                 )
                 .await
                 .context("Could not edit request message")?;
-
-                delete_user_request(&ctx, &embed)
-                    .await
-                    .context("Could not delete original request")?;
             } else {
                 send_ephemeral_interaction_reply(
-                    &ctx,
+                    ctx,
                     component_interaction.clone(),
                     "You cannot cancel someone else's background request",
                 )
                 .await
-                .context("Could not tell user they cannot cancel someone else's background")?;
+                .context(
+                    "Could not tell user they cannot cancel someone else's background request",
+                )?;
             }
         }
         &_ => {

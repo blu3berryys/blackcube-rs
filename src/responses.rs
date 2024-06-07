@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
-use serenity::{
-    all::{ButtonStyle, Embed, InteractionResponseFlags, MessageFlags, MessageId, UserId},
+use poise::serenity_prelude::{
+    all::{ButtonStyle, InteractionResponseFlags, MessageFlags},
     builder::{
         CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
         CreateInteractionResponseFollowup, CreateInteractionResponseMessage, CreateMessage,
@@ -9,16 +9,14 @@ use serenity::{
     client::Context,
     model::{application::ComponentInteraction, channel::Message},
 };
-use url::Url;
 
-use crate::structs::{Config, PendingRequestMidStore, PendingRequestUidStore};
+use crate::Context as PoiseContext;
 
 pub async fn edit_request(
     ctx: &Context,
     msg: &mut Message,
     message: &str,
     thumbnail: Option<&str>,
-    link: Option<&str>,
     keep_components: bool,
 ) -> anyhow::Result<()> {
     let embed = &msg.embeds[0];
@@ -49,13 +47,6 @@ pub async fn edit_request(
     match thumbnail {
         Some(thumbnail) => {
             embed_builder = embed_builder.thumbnail(thumbnail);
-        }
-        None => {}
-    }
-
-    match link {
-        Some(link) => {
-            embed_builder = embed_builder.url(link);
         }
         None => {}
     }
@@ -106,32 +97,17 @@ pub async fn send_ephemeral_interaction_followup_reply(
     Ok(())
 }
 
-pub async fn send_command_reply(
-    msg: Message,
-    ctx: Context,
-    response_text: &str,
-) -> anyhow::Result<()> {
-    msg.reply(&ctx.http, response_text)
-        .await
-        .context("could not reply to message")?;
-    Ok(())
-}
-
-pub async fn create_request_log_message(ctx: &Context, msg: &Message) -> anyhow::Result<MessageId> {
-    let image_url = &msg
-        .attachments
-        .first()
-        .context("Could not get attachment from message")?
-        .url;
-
-    let data = ctx.data.read().await;
-    let config = data.get::<Config>().context("Could not get config")?;
-
-    let created_message = config
+pub async fn create_request_log_message(
+    ctx: PoiseContext<'_>,
+    file_url: String,
+) -> anyhow::Result<String> {
+    let created_message = ctx
+        .data()
+        .config
         .server
         .log_channel_id
         .send_message(
-            &ctx.http,
+            &ctx.http(),
             CreateMessage::new()
                 .components(vec![CreateActionRow::Buttons(vec![
                     CreateButton::new("Approve")
@@ -147,82 +123,12 @@ pub async fn create_request_log_message(ctx: &Context, msg: &Message) -> anyhow:
                 .embed(
                     CreateEmbed::new()
                         .title("Request Pending")
-                        .field("User", msg.author.name.clone(), true)
-                        .field("UID", msg.author.id.to_string(), true)
-                        .thumbnail(image_url)
-                        .url(msg.link()),
+                        .field("User", ctx.author().name.clone(), true)
+                        .field("UID", ctx.author().id.to_string(), true)
+                        .thumbnail(file_url),
                 ),
         )
         .await
         .context("could not create request log message")?;
-    Ok(created_message.id)
-}
-
-pub async fn delete_user_request(ctx: &Context, embed: &Embed) -> anyhow::Result<()> {
-    let embed_link = embed.url.clone().context("could not get embed link")?;
-
-    let mut uid: Option<String> = None;
-
-    for field in &embed.fields {
-        match field.name.as_str() {
-            "UID" => {
-                uid = Some(field.value.clone());
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    let uid: String = uid.context("Could not parse uid from embed")?;
-
-    let mut data = ctx.data.write().await;
-    let pending_request_store = data
-        .get_mut::<PendingRequestUidStore>()
-        .context("Could not get pending request store")?;
-
-    let search_uid = UserId::new(uid.parse()?);
-    pending_request_store.remove(&search_uid);
-
-    let pending_request_mid_store = data
-        .get_mut::<PendingRequestMidStore>()
-        .context("Could not get pending request store")?;
-
-    let embed_link = Url::parse(&embed_link).context("Could not parse embed link")?;
-
-    let segments = embed_link
-        .path_segments()
-        .context("could not get segments from embed link")?;
-    let message_id = segments
-        .into_iter()
-        .last()
-        .context("Could not get message ID from link")?;
-
-    let message_id: u64 = message_id.parse().context("Error parsing message id")?;
-
-    pending_request_mid_store.remove(&MessageId::new(message_id));
-
-    drop(data);
-
-    let segments = embed_link
-        .path_segments()
-        .context("could not get segments from embed link")?;
-    let message_id = segments
-        .into_iter()
-        .last()
-        .context("Could not get message ID from link")?;
-
-    let message_id: u64 = message_id.parse().context("Error parsing message id")?;
-
-    let data = ctx.data.read().await;
-    let config = data.get::<Config>().context("Could not get config")?;
-
-    config
-        .server
-        .request_channel_id
-        .delete_message(&ctx.http, message_id)
-        .await
-        .context("could not delete original message")?;
-
-    drop(data);
-    Ok(())
+    Ok(created_message.link())
 }
