@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
-use image::io::Reader;
+use image::ImageReader;
 use poise::serenity_prelude as serenity;
 
 use crate::{auth::HasAuth, responses::create_request_log_message, s3bucket::delete, Context};
 
-/// Request a Background
+/// Request a banner
 #[poise::command(slash_command, ephemeral)]
 pub async fn bg(
     ctx: Context<'_>,
@@ -18,7 +18,7 @@ pub async fn bg(
 
     // Screw you, Discord, for making me do this. PLEASE stop parsing your content type from file extensions.
     let file_data = file.download().await?;
-    let content_type = Reader::new(Cursor::new(file_data))
+    let content_type = ImageReader::new(Cursor::new(file_data))
         .with_guessed_format()?
         .format();
 
@@ -52,7 +52,7 @@ pub async fn bg(
     Ok(())
 }
 
-/// Remove a Background
+/// Remove a banner
 #[poise::command(slash_command)]
 pub async fn rm(
     ctx: Context<'_>,
@@ -69,7 +69,7 @@ pub async fn rm(
                 delete(ctx.data(), user.clone()).await?;
                 ctx.send(
                     poise::CreateReply::default()
-                        .content(format!("Removed Banner for {}", user))
+                        .content(format!("Removed banner for {}", user))
                         .ephemeral(true),
                 )
                 .await?;
@@ -86,7 +86,7 @@ pub async fn rm(
             delete(ctx.data(), ctx.author().id.to_string()).await?;
             ctx.send(
                 poise::CreateReply::default()
-                    .content("Removed Your Banner")
+                    .content("Removed your banner")
                     .ephemeral(true),
             )
             .await?;
