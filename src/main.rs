@@ -19,26 +19,20 @@ type Context<'a> = poise::Context<'a, Data, anyhow::Error>;
 
 #[tokio::main]
 async fn main() {
-    let config_file_location;
-
-    match std::env::consts::OS {
-        "linux" => {
-            config_file_location = "/etc/blackcube-rs/blackcube-rs.toml";
-        }
-        "windows" => {
-            config_file_location = "%SystemDrive%\\ProgramData\\blackcube-rs\\blackcube-rs.toml";
-        }
+    let config_file_location = match std::env::consts::OS {
+        "linux" => "/etc/blackcube-rs/blackcube-rs.toml",
+        "windows" => "%SystemDrive%\\ProgramData\\blackcube-rs\\blackcube-rs.toml",
         _ => {
-            unreachable!();
+            unreachable!()
         }
-    }
+    };
 
     let config: Config = toml::from_str(
         &fs::read_to_string(config_file_location)
             .expect("Could not read configuration file, make sure the config is located at /etc/blackcube-rs/blackcube-rs.toml or %SystemDrive%\\ProgramData\\blackcube-rs\\blackcube-rs.toml")
     ).expect("Could not read config");
 
-    // Should I be doing all of this just to allow for changes to the valid image types from the config?? The jury is still out.
+    // Should I be doing all of this just to allow for changes to the valid image types from the config? The jury is still out.
     let valid_content_types = config
         .settings
         .image_types
@@ -79,7 +73,7 @@ async fn main() {
                 poise::builtins::register_in_guild(
                     ctx,
                     &framework.options().commands,
-                    config.server.guild_id.into(),
+                    config.server.guild_id,
                 )
                 .await?;
                 Ok(Data {
@@ -112,61 +106,51 @@ async fn event_handler(
     data: &Data,
 ) -> anyhow::Result<()> {
     match event {
-        serenity::FullEvent::InteractionCreate { interaction } => match interaction {
-            Interaction::Component(component_interaction) => {
-                let result =
-                    handle_component_interaction(ctx, data, component_interaction.clone()).await;
-                if result.is_err() {
-                    println!("{:?}", result);
+        serenity::FullEvent::InteractionCreate {
+            interaction: Interaction::Component(component_interaction),
+        } => {
+            let result =
+                handle_component_interaction(ctx, data, component_interaction.clone()).await;
+            if result.is_err() {
+                println!("{:?}", result);
 
-                    let embed = component_interaction.message.embeds.first();
+                let embed = component_interaction.message.embeds.first();
 
-                    match embed {
-                        Some(embed) => {
-                            let embed = embed.clone();
+                if let Some(embed) = embed {
+                    let embed = embed.clone();
 
-                            let thumbnail;
+                    let thumbnail = embed
+                        .thumbnail
+                        .as_ref()
+                        .map(|embed_thumbnail| embed_thumbnail.url.as_str());
 
-                            match &embed.thumbnail {
-                                Some(embed_thumbnail) => {
-                                    thumbnail = Some(embed_thumbnail.url.as_str());
-                                }
-                                None => {
-                                    thumbnail = None;
-                                }
-                            }
-
-                            let result = edit_request(
-                                &ctx,
-                                &mut component_interaction.clone().message,
-                                "Request Pending",
-                                thumbnail,
-                                true,
-                            )
-                            .await;
-                            if result.is_err() {
-                                println!("{:?}", result);
-                            }
-                        }
-                        None => {}
-                    }
-
-                    let result = send_ephemeral_interaction_followup_reply(
-                        &ctx,
-                        component_interaction.clone(),
-                        "Failed to accept request",
+                    let result = edit_request(
+                        ctx,
+                        &mut component_interaction.clone().message,
+                        "Request Pending",
+                        thumbnail,
+                        true,
                     )
                     .await;
-                    match result {
-                        Ok(()) => {}
-                        Err(err) => {
-                            println!("{}", err);
-                        }
+                    if result.is_err() {
+                        println!("{:?}", result);
+                    }
+                }
+
+                let result = send_ephemeral_interaction_followup_reply(
+                    ctx,
+                    component_interaction.clone(),
+                    "Failed to accept request",
+                )
+                .await;
+                match result {
+                    Ok(()) => {}
+                    Err(err) => {
+                        println!("{}", err);
                     }
                 }
             }
-            _ => {}
-        },
+        }
         serenity::FullEvent::Message { new_message } => {
             if new_message.channel_id == data.config.server.request_channel_id
                 && !new_message.author.has_auth(ctx, data).await?
