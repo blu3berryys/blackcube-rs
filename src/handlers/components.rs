@@ -39,12 +39,9 @@ pub async fn handle_component_interaction(
     let mut uid: Option<String> = None;
 
     for field in &embed.fields {
-        match field.name.as_str() {
-            "UID" => {
-                uid = Some(field.value.clone());
-                break;
-            }
-            _ => {}
+        if field.name.as_str() == "UID" {
+            uid = Some(field.value.clone());
+            break;
         }
     }
 
@@ -140,9 +137,7 @@ pub async fn handle_component_interaction(
                     "You cannot cancel someone else's banner request",
                 )
                 .await
-                .context(
-                    "Could not tell user they cannot cancel someone else's banner request",
-                )?;
+                .context("Could not tell user they cannot cancel someone else's banner request")?;
             }
         }
         &_ => {
