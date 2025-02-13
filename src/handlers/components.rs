@@ -48,7 +48,7 @@ pub async fn handle_component_interaction(
         }
     }
 
-    let uid: String = uid.context("Could not parse uid from embed")?;
+    let uid: String = uid.context("Could not parse UID from embed")?;
 
     match component_interaction.data.custom_id.as_str() {
         "Approve" => {
@@ -80,12 +80,12 @@ pub async fn handle_component_interaction(
                     false,
                 )
                 .await
-                .context("could not edit request message")?;
+                .context("Could not edit request message")?;
             } else {
                 send_ephemeral_interaction_reply(
                     ctx,
                     component_interaction.clone(),
-                    "You must wait for a moderator to approve/deny this background",
+                    "You must wait for a moderator to approve/deny this banner",
                 )
                 .await
                 .context("Could not notify user of lack of auth")?;
@@ -111,7 +111,7 @@ pub async fn handle_component_interaction(
                 send_ephemeral_interaction_reply(
                     ctx,
                     component_interaction.clone(),
-                    "You must wait for a moderator to approve/deny this background",
+                    "You must wait for a moderator to approve/deny this banner",
                 )
                 .await
                 .context("Could not tell user to wait for moderator approval")?;
@@ -137,11 +137,11 @@ pub async fn handle_component_interaction(
                 send_ephemeral_interaction_reply(
                     ctx,
                     component_interaction.clone(),
-                    "You cannot cancel someone else's background request",
+                    "You cannot cancel someone else's banner request",
                 )
                 .await
                 .context(
-                    "Could not tell user they cannot cancel someone else's background request",
+                    "Could not tell user they cannot cancel someone else's banner request",
                 )?;
             }
         }
