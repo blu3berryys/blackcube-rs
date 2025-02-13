@@ -44,11 +44,8 @@ pub async fn edit_request(
 
     let mut embed_builder = CreateEmbed::new().title(message).fields(fields);
 
-    match thumbnail {
-        Some(thumbnail) => {
-            embed_builder = embed_builder.thumbnail(thumbnail);
-        }
-        None => {}
+    if let Some(thumbnail) = thumbnail {
+        embed_builder = embed_builder.thumbnail(thumbnail);
     }
 
     msg.edit(
