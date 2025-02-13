@@ -36,7 +36,7 @@ async fn main() {
     let config: Config = toml::from_str(
         &fs::read_to_string(config_file_location)
             .expect("Could not read configuration file, make sure the config is located at /etc/blackcube-rs/blackcube-rs.toml or %SystemDrive%\\ProgramData\\blackcube-rs\\blackcube-rs.toml")
-    ).expect("could not read config");
+    ).expect("Could not read config");
 
     // Should I be doing all of this just to allow for changes to the valid image types from the config?? The jury is still out.
     let valid_content_types = config
