@@ -35,4 +35,4 @@ jobs:
         with:
           name: BlackCube-rs Artifact
           path: |
-            "./target/x86_64-pc-windows-gnu/release/blackcube-rs.exe"
+            "./target/release/blackcube-rs.exe"
