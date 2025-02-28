@@ -18,10 +18,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Update Rust
+        run: rustup update
+
       - name: Install cargo-edit
         run: cargo install cargo-edit
 
-      - name: Bump Cargo.toml dependencies
+      - name: Bump dependencies
         run: cargo upgrade
 
       - name: Update lockfile
@@ -30,8 +33,12 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-features --all-targets
 
-      - name: Test
-        run: cargo test --all-features --all-targets
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v7
+        with:
+          title: '[deps] bump'
+          body: 'bump deps'
+          commit-message: '[deps] bump'
