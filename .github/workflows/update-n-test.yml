@@ -42,3 +42,4 @@ jobs:
           title: '[deps] bump'
           body: 'bump deps'
           commit-message: '[deps] bump'
+          branch: 'bump-deps'
