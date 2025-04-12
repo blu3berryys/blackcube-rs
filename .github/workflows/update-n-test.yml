@@ -1,4 +1,4 @@
-name: Update n Test
+name: Bump deps
 
 on:
   workflow_dispatch:
@@ -7,8 +7,8 @@ on:
     - cron: '0 0 * * *'
 
 jobs:
-  update-n-test:
-    name: Update n Test
+  bump-deps:
+    name: Bump deps
     runs-on: ubuntu-latest
 
     steps:
@@ -30,13 +30,7 @@ jobs:
       - name: Update lockfile
         run: cargo update
 
-      - name: Run clippy
-        run: cargo clippy --all-features --all-targets
-
-      - name: Run rustfmt
-        run: cargo fmt --all -- --check
-
-      - name: Create pull request
+      - name: Create or update pull request
         uses: peter-evans/create-pull-request@v7
         with:
           title: '[deps] bump'
